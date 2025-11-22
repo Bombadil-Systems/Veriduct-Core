@@ -23,7 +23,7 @@ Veriduct transforms files into format-agnostic chunks:
 
 **EICAR test file:**
 - Original: 65/68 detection on VirusTotal
-- After Veriduct: 0/62 detection on VirusTotal
+- After Veriduct (with SSM): 0/62 detection on VirusTotal
 
 **Document formats:**
 - PDF, DOCX, XLSX: Format completely unrecognizable after processing
