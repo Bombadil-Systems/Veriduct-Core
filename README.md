@@ -371,9 +371,6 @@ Do not trust the reassembled output.
 
 ---
 
-## Contributing
-
-Contributions welcome under Apache 2.0 license.
 
 **Areas of interest:**
 - Additional keymap disguise formats
