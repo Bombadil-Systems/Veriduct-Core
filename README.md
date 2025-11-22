@@ -35,7 +35,7 @@ Veriduct transforms files into format-agnostic chunks:
 
 ```bash
 git clone https://github.com/Bombadil-Systems/Veriduct-Core.git
-cd veriduct
+cd veriduct-core
 pip install -r requirements.txt
 ```
 
