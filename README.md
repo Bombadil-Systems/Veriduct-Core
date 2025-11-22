@@ -328,7 +328,6 @@ File carving tools may identify format boundaries or extract meaningful data fro
 
 Contact chris@veriduct.com for commercial licensing.
 
-See `LICENSE` file for complete Apache 2.0 terms.
 
 ---
 
