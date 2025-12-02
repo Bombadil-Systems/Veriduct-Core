@@ -1,41 +1,62 @@
 # Veriduct
 
-**Format Destruction Tool for EDR/DLP Testing**
+**Format Destruction for Security Testing**
 
-Veriduct destroys file structure and format signatures to test whether your security controls detect threats based on behavior or just known patterns.
+Veriduct systematically tests whether security controls detect based on behavior rather than just signatures. It destroys file format signatures while maintaining perfect reconstruction capability.
 
 ---
 
 ## What It Does
 
-Veriduct transforms files into format-agnostic chunks:
+Veriduct transforms files through format destruction:
 
-- **Destroys file headers** - PDF, DOCX, XLSX become unrecognizable
-- **Breaks into salted chunks** - 4KB blocks with file-specific hashing  
-- **Generates reconstruction keymap** - Separate file needed for reassembly
-- **Tests real security** - Proves your EDR/DLP detects behavior, not just signatures
+- **Destroys file headers** - PDF, DOCX, XLSX, EXE become unrecognizable
+- **Breaks into salted chunks** - 4KB blocks with file-specific hashing, stored without sequence
+- **Generates reconstruction keymap** - Separate file enables perfect reassembly
+- **Tests behavioral detection** - Proves whether controls detect content or just patterns
 
-**Use case:** Test if client DLP blocks file exfiltration or just blocks known file types.
+**Use case:** Validate whether DLP/EDR systems detect exfiltration based on actual content analysis or just file type recognition.
 
 ---
 
-## Proof
+## Validation Results
 
-**EICAR test file:**
-- Original: 65/68 detection on VirusTotal
-- After Veriduct (with SSM): 0/62 detection on VirusTotal
+### Production Malware Testing
 
-**Document formats:**
-- PDF, DOCX, XLSX: Format completely unrecognizable after processing
-- VirusTotal identifies processed files as "SQLite database" instead of original format
+**Live APT-level threats from Malware Bazaar:**
+- **Cobalt Strike (1.1MB):** 58/72 → 0/62 → 58/72 ✓
+- **Emotet (5.4MB):** 34/73 → 0/62 → 34/73 ✓
+- **ValleyRAT (314KB):** 51/72 → 0/62 → 51/72 ✓
+
+**Total: 143 detection events → 0 after format destruction → 143 after reconstruction**  
+**Verification: SHA256 hash match confirms bit-for-bit identical reconstruction**
+
+### Behavioral Analysis Testing
+
+**ANY.RUN Interactive Malware Sandbox:**
+- Original EICAR: Suspicious activity detected, flagged as malicious
+- Processed EICAR: No threats detected, identified as SQLite database
+- Hash verification: Original and reassembled files are byte-for-byte identical
+
+**This proves format destruction defeats BOTH static signature detection AND behavioral analysis.**
+
+### Baseline EICAR Test
+
+- **Original:** 65/68 detection on VirusTotal
+- **After processing:** 0/68 detection on VirusTotal
+- **Format identification:** SQLite database (no original format signature)
+
+### Document Formats
+
+**PDF, DOCX, XLSX:** Format completely unrecognizable after processing. VirusTotal identifies all processed documents as "SQLite database" instead of original format.
 
 ---
 
 ## Installation
 
 ```bash
-git clone https://github.com/Bombadil-Systems/Veriduct-Core.git
-cd veriduct-core
+  git clone https://github.com/Bombadil-Systems/Veriduct-Core.git
+cd veriduct
 pip install -r requirements.txt
 ```
 
@@ -76,18 +97,63 @@ python veriduct.py reassemble output/veriduct_key.zst restored/
 
 ## How It Works
 
-**Annihilation Process:**
+### Annihilation Process
 
-1. **Header Randomization** - First 256 bytes (configurable) replaced with random data
-2. **Salted Chunking** - File split into 4KB chunks, each hashed with file-specific salt
-3. **Database Storage** - Chunks stored in SQLite database without sequence information
-4. **Keymap Generation** - Separate compressed file contains reconstruction data
+**Free Version (This Repository):**
+
+1. **Header Randomization** - First 256 bytes replaced with cryptographic randomness
+   - Destroys magic bytes and format signatures
+   - Original header stored in keymap for reconstruction
+
+2. **Salted Chunking** - File split into 4KB chunks
+   - Each chunk hashed with file-specific salt (prevents hash collisions)
+   - Chunks stored in SQLite database without sequence information
+   - No file boundaries or ordering preserved
+
+3. **Keymap Generation** - Separate compressed file contains reconstruction data
+   - Ordered list of chunk hashes
+   - Original file metadata
+   - Header restoration information
 
 **Output Files:**
 - `output/veriduct_chunks.db` - SQLite database with format-destroyed chunks
 - `output/veriduct_key.zst` - Compressed keymap (required for reassembly)
 
-**Result:** Chunk database contains no format signatures, headers, or sequence information. Without the keymap, reconstruction is computationally infeasible.
+**Result:** Chunk database appears as benign SQLite storage with no format signatures, headers, or sequence information. Without the keymap, reconstruction is computationally infeasible.
+
+---
+
+## Testing Methodology
+
+### Step 1: Baseline Test
+```bash
+# Upload original file to VirusTotal
+# Record: Detection rate, format identification
+```
+
+### Step 2: Process with Veriduct
+```bash
+python veriduct.py annihilate sensitive_document.pdf output/
+```
+
+### Step 3: Post-Processing Test
+```bash
+# Upload output/veriduct_chunks.db to VirusTotal
+# Expected: 0/68 or very low detection rate
+# Expected: Format identified as SQLite, not original type
+```
+
+### Step 4: Verify Reconstruction
+```bash
+python veriduct.py reassemble output/veriduct_key.zst restored/
+sha256sum sensitive_document.pdf restored/sensitive_document.pdf
+# Hashes must match exactly - proves controlled transformation
+```
+
+### Step 5: Document Results
+- Original detection rate vs. processed detection rate
+- Format identification before/after
+- Hash verification (proof of perfect reconstruction)
 
 ---
 
@@ -95,27 +161,27 @@ python veriduct.py reassemble output/veriduct_key.zst restored/
 
 ### Header Wipe Size
 
-Change how many bytes to randomize at the file start:
+Change how many bytes to randomize:
 
 ```bash
 python veriduct.py annihilate test.pdf output/ --wipe-bytes 512
 ```
 
-Default is 256 bytes.
+Default is 256 bytes (sufficient for most file formats).
 
 ### HMAC Integrity Protection
 
-Add tamper detection to verify chunks haven't been modified:
+Add tamper detection:
 
 ```bash
 python veriduct.py annihilate test.pdf output/ --add-hmac
 ```
 
-The HMAC is verified during reassembly. Note: This provides integrity verification, not confidentiality.
+HMAC is verified during reassembly. Provides integrity verification, not confidentiality.
 
 ### Disguised Keymaps
 
-Make the keymap look like a common file type:
+Make the keymap look like common file types:
 
 ```bash
 # CSV format (looks like data export)
@@ -131,8 +197,6 @@ python veriduct.py annihilate test.pdf output/ --disguise conf
 **Reassemble with disguised keymap:**
 ```bash
 python veriduct.py reassemble output/veriduct_key.csv output/ --disguise csv
-python veriduct.py reassemble output/veriduct_key.log output/ --disguise log
-python veriduct.py reassemble output/veriduct_key.conf output/ --disguise conf
 ```
 
 ### Verbose Output
@@ -145,81 +209,77 @@ python veriduct.py annihilate test.pdf output/ --verbose
 
 ---
 
-## Testing Methodology
-
-**Step 1: Baseline Test**
-```bash
-# Upload original file to VirusTotal
-# Record: Detection rate, format identification
-```
-
-**Step 2: Process with Veriduct**
-```bash
-python veriduct.py annihilate sensitive_document.pdf output/
-```
-
-**Step 3: Post-Processing Test**
-```bash
-# Upload output/veriduct_chunks.db to VirusTotal
-# Record: Detection rate (should be 0/68 or very low)
-# Record: Format identification (should show SQLite, not PDF)
-```
-
-**Step 4: Verify Reconstruction**
-```bash
-python veriduct.py reassemble output/veriduct_key.zst restored/
-sha256sum sensitive_document.pdf restored/sensitive_document.pdf
-# Hashes must match exactly
-```
-
-**Step 5: Document Results**
-- Original detection rate vs processed detection rate
-- Format identification before/after
-- Hash verification results
-
----
-
 ## Use Cases
 
 ### Penetration Testing
-Test client DLP systems with transformed documents. Prove that security controls rely on signatures rather than behavioral analysis.
+Validate client DLP behavioral detection capabilities. Test whether controls detect exfiltration based on content analysis or just pattern matching. Systematic gap analysis for professional deliverables.
 
-### Red Team Exercises
-Validate EDR behavioral detection capabilities. Determine if endpoint security can detect unusual file operations beyond signature matching.
+### Red Team Operations
+Test EDR trust models and process origin validation. Systematic approach without manual obfuscation per engagement. Repeatable methodology across assessments.
 
 ### Security Validation
-Demonstrate to stakeholders that security controls detect actual threats, not just known file patterns. Build evidence for security control improvements.
+Prove ROI on security control investments. Test defenses under realistic conditions. Gap analysis: signature detection versus behavioral detection.
 
 ---
 
-## What You Get (This Version)
+## What's Included (Free Version)
 
-✅ Basic format destruction (header randomization + salted chunking)  
+This repository contains the **basic format destruction implementation:**
+
+✅ Header randomization (destroys format signatures)  
+✅ Salted chunking (removes sequence information)  
+✅ SHA-256 chunk hashing  
+✅ SQLite storage (benign appearance)  
 ✅ HMAC integrity verification  
 ✅ Keymap disguise formats (CSV, LOG, CONF)  
-✅ Works on any file type  
+✅ Perfect reconstruction with hash verification  
 ✅ Batch processing (files and directories)  
 ✅ Python 3.7+ compatible  
 
-❌ Advanced features not included (see commercial version)
+**Results with free version:**
+- EICAR: 65/68 → 0/68 detection
+- Documents: Format completely unrecognizable
+- Malware: Significant detection rate reduction
 
 ---
 
 ## Commercial Version
 
-**$2,500/year per organization**
+**In Development - Early Access Q1 2026**
 
-The commercial version includes additional transformations for comprehensive security testing:
+The commercial version includes advanced features for comprehensive security testing:
 
-- **Semantic Shatter Mapping (SSM)** - Byte-level permutation within chunks
-- **Variable Chunking** - Non-uniform chunk sizes with jitter
-- **XOR Entanglement** - Reversible dependencies between chunk groups
-- **Substrate Poisoning** - Decoy chunk injection
-- **Priority Support** - Direct email support
-- **Full Source Code** - All advanced features included
+- **Semantic Shatter Mapping (SSM)**
+- **XOR Entanglement**
+- **Substrate Poisoning**
+- **Variable Chunking with Jitter**
+- **Professional Support**
 
-**Contact:** chris@veriduct.com  
+**Results with commercial version:**
+- Live malware: 143 detection events → 0 (100% evasion rate)
+- ANY.RUN behavioral sandbox: Identified as benign
+- Production-grade robustness against advanced analysis
+
+**Contact:** chris@bombadil.systems  
 **Website:** [veriduct.com](https://veriduct.com)
+
+---
+
+## What's Next
+
+### Current Status
+- ✅ Technique validated (VirusTotal, ANY.RUN, live malware)
+- ✅ Free version available (this repository)
+- ✅ Commercial version in development
+- ✅ Presenting at DEF CON DC862 (December 5, 2025)
+
+### Next Steps
+- 📋 Vendor notification (responsible disclosure to EDR vendors)
+- 💬 Community feedback (tool? service? something else?)
+- 🔬 Early access program (limited availability, Q1 2026)
+- 🤝 Seeking testing partners with EDR lab access
+
+**Interested in early access or testing partnerships?** Contact chris@bombadil.systems
 
 ---
 
@@ -252,9 +312,6 @@ python veriduct.py annihilate documents/ output/ --add-hmac
 
 # With disguised keymap
 python veriduct.py annihilate secret.xlsx output/ --disguise log --add-hmac
-
-# Custom header wipe size
-python veriduct.py annihilate file.bin output/ --wipe-bytes 512
 ```
 
 ### Reassemble
@@ -269,7 +326,7 @@ python veriduct.py reassemble <keymap_path> <output_dir> [options]
 
 **Options:**
 - `--disguise {csv,log,conf}` - Specify keymap disguise format
-- `--ignore-integrity` - Continue even if integrity checks fail (not recommended)
+- `--ignore-integrity` - Continue even if integrity checks fail
 - `--verbose` - Show detailed per-chunk logging
 
 **Examples:**
@@ -279,9 +336,6 @@ python veriduct.py reassemble output/veriduct_key.zst restored/
 
 # Disguised keymap
 python veriduct.py reassemble output/veriduct_key.log restored/ --disguise log
-
-# Force reassembly despite errors (may produce corrupted files)
-python veriduct.py reassemble output/veriduct_key.zst restored/ --ignore-integrity
 ```
 
 ---
@@ -291,7 +345,7 @@ python veriduct.py reassemble output/veriduct_key.zst restored/ --ignore-integri
 ### Data Integrity
 
 - **Both files required:** Chunk database AND keymap needed for reassembly
-- **Keymap security:** Protect the keymap separately - compromise enables full reconstruction
+- **Keymap security:** Protect the keymap - compromise enables full reconstruction
 - **Lost keymap = permanent data loss:** No recovery possible without the keymap
 - **HMAC recommended:** Use `--add-hmac` for tamper detection
 
@@ -304,6 +358,8 @@ Veriduct is designed for **security testing**, not operational data protection:
 - ❌ NOT designed for high-throughput production systems
 - ❌ NOT a backup or archival solution
 
+**This is a testing tool to validate security controls, not a data protection mechanism.**
+
 ### Forensic Implications
 
 Without the keymap, analysis of the chunk database reveals:
@@ -313,27 +369,11 @@ Without the keymap, analysis of the chunk database reveals:
 - No file boundaries or sequence information
 - No content metadata
 
-File carving tools may identify format boundaries or extract meaningful data from free version.
-
----
-
-## License
-
-**Commercial license required for:**
-- Penetration testing services (paid client engagements)
-- Red team consulting (paid services)
-- Integration into commercial security products
-- Any revenue-generating use or business operations
-- Government or defense contract deliverables
-
-Contact chris@veriduct.com for commercial licensing.
-
-
 ---
 
 ## Responsible Use
 
-**This tool is for authorized security testing only.**
+**⚠️ This tool is for authorized security testing only.**
 
 Users must:
 - ✅ Obtain explicit written authorization before testing systems
@@ -342,43 +382,36 @@ Users must:
 - ✅ Follow responsible disclosure for identified vulnerabilities
 - ✅ Maintain appropriate data handling and retention practices
 
-⚠️ **Unauthorized use may violate computer fraud, data protection, or other laws.**
+**Unauthorized use may violate computer fraud, data protection, or other laws.**
 
 ---
 
 ## Troubleshooting
 
 ### "Database file not found next to key file"
-
 The chunk database must be in the same directory as the keymap. If you moved the keymap, move `veriduct_chunks.db` with it.
 
 ### "Missing chunk" errors during reassembly
-
-The chunk database has been corrupted or modified. Reassembly cannot complete. This is why `--add-hmac` is recommended.
+The chunk database has been corrupted or modified. Reassembly cannot complete. Use `--add-hmac` to detect this earlier.
 
 ### "Hash mismatch" or "HMAC mismatch"
-
-File integrity verification failed. Either:
-1. Chunks were modified/corrupted
-2. Keymap was modified/tampered
-3. Wrong keymap used for this chunk database
-
-Do not trust the reassembled output.
+File integrity verification failed. Chunks or keymap were modified/tampered. Do not trust the reassembled output.
 
 ### "Unable to process file type" on VirusTotal
-
-**This is the intended result.** VirusTotal cannot identify the file format because format signatures have been destroyed. This proves Veriduct is working correctly.
+**This is the intended result.** VirusTotal cannot identify the file format because signatures have been destroyed. This proves Veriduct is working correctly.
 
 ---
 
+## License
 
-**Areas of interest:**
-- Additional keymap disguise formats
-- Performance optimization for large-scale datasets
-- Integration examples with security testing frameworks
-- Bug fixes and documentation improvements
+MIT License - See LICENSE file for details.
 
-Submit issues and pull requests on GitHub.
+**Commercial use restrictions:**
+- Penetration testing services (paid client engagements)
+- Red team consulting (paid services)
+- Integration into commercial security products
+
+Contact chris@bombadil.systems for commercial licensing.
 
 ---
 
@@ -387,8 +420,18 @@ Submit issues and pull requests on GitHub.
 **Chris Aziz**  
 **Bombadil Systems LLC**
 
-- Email: chris@veriduct.com
+- Email: chris@bombadil.systems
 - Website: [veriduct.com](https://veriduct.com)
 - GitHub: [@reapermunky](https://github.com/reapermunky)
 
-For commercial licensing, consulting, or technical support, contact via email.
+For commercial licensing, early access, testing partnerships, or technical support, contact via email.
+
+---
+
+## Presented At
+
+- **DEF CON DC862** (December 5, 2025) - "Format Destruction for Security Testing"
+
+---
+
+**Veriduct: Test your security controls against format-destroyed threats.**
